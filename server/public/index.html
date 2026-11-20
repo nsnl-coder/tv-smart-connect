@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Remote TV">
+<meta name="theme-color" content="#0f1115">
+<title>Remote TV</title>
+<style>
+  :root { --bg:#0f1115; --card:#1a1d24; --line:#2a2e37; --text:#eef0f4; --muted:#8b92a1; --accent:#ff9900; --ok:#2ecc71; --bad:#ff5a5f; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    padding: calc(12px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom)); }
+  main { max-width:520px; margin:0 auto; display:grid; gap:12px; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  h1 { font-size:20px; margin:0; }
+  .pill { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:999px; background:var(--card);
+    border:1px solid var(--line); font-size:13px; color:var(--muted); white-space:nowrap; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); }
+  .pill.ok .dot { background:var(--ok); } .pill.bad .dot { background:var(--bad); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; display:grid; gap:10px; }
+  input { width:100%; background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:12px; padding:12px 14px; font:inherit; outline:none; }
+  input:focus { border-color:var(--accent); }
+  #codeInput { text-transform:uppercase; letter-spacing:.3em; font-size:24px; text-align:center; font-weight:700; }
+  button { font:inherit; border:0; border-radius:12px; padding:12px 0; background:#262a33; color:var(--text); font-weight:600; }
+  button:active { transform:scale(.96); background:#333845; }
+  button.primary { background:var(--accent); color:#111; }
+  .row { display:flex; gap:8px; } .row > * { flex:1; }
+  .sub { color:var(--muted); font-size:13px; }
+  .title { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .time { display:flex; justify-content:space-between; color:var(--muted); font-size:13px; font-variant-numeric:tabular-nums; }
+  input[type=range] { padding:0; border:0; background:transparent; accent-color:var(--accent); height:28px; }
+  #pad { height:240px; border-radius:16px; background:#14171d; border:1px dashed var(--line); touch-action:none;
+    display:flex; align-items:center; justify-content:center; text-align:center; color:#4b5260; font-size:14px; user-select:none; -webkit-user-select:none; }
+  #pad.active { border-color:var(--accent); }
+  .toast { position:fixed; left:50%; bottom:calc(20px + env(safe-area-inset-bottom)); transform:translateX(-50%) translateY(150px);
+    background:#2b303b; padding:12px 14px; border-radius:12px; width:min(92vw,480px); transition:transform .25s; z-index:10;
+    box-shadow:0 8px 30px rgba(0,0,0,.5); display:flex; gap:10px; align-items:center; }
+  .toast.show { transform:translateX(-50%) translateY(0); }
+  .toast.err { background:#5a1f22; }
+  .toast span { flex:1; font-size:14px; word-break:break-word; }
+  .toast button { padding:8px 12px; flex:none; }
+  .hidden { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>📺 Remote TV</h1>
+    <span id="pill" class="pill"><span class="dot"></span><span id="pillText">Đang kết nối…</span></span>
+  </header>
+
+  <section id="pairCard" class="card hidden">
+    <div class="sub">Mở app <b>TV Smart Connect</b> trên Fire TV, rồi nhập mã 6 ký tự trên màn hình TV (hoặc quét mã QR trên TV bằng Camera).</div>
+    <input id="codeInput" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="ABC123">
+    <button id="pairBtn" class="primary">Kết nối</button>
+  </section>
+
+  <section id="remote" class="hidden" style="display:grid;gap:12px">
+    <div class="card">
+      <input id="urlInput" type="url" placeholder="Dán link trang phim…" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <div class="row">
+        <button id="pasteBtn">📋 Dán</button>
+        <button id="openBtn" class="primary">Mở trên TV</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div id="title" class="title">TV đang ở màn hình chờ</div>
+      <div id="videoBox" class="hidden" style="display:grid;gap:6px">
+        <input id="seek" type="range" min="0" max="0" step="1" value="0">
+        <div class="time"><span id="pos">0:00</span><span id="state"></span><span id="dur">0:00</span></div>
+      </div>
+      <div class="row">
+        <button data-cmd='{"type":"seekBy","delta":-10}'>« 10s</button>
+        <button id="toggleBtn" class="primary" data-cmd='{"type":"toggle"}'>⏯</button>
+        <button data-cmd='{"type":"seekBy","delta":10}'>10s »</button>
+      </div>
+      <div class="row">
+        <button data-cmd='{"type":"fullscreen"}'>⛶ Phóng to</button>
+        <button data-cmd='{"type":"back"}'>↩ Quay lại</button>
+      </div>
+      <div class="row">
+        <button data-cmd='{"type":"volume","dir":"down"}'>🔉</button>
+        <button data-cmd='{"type":"volume","dir":"up"}'>🔊</button>
+        <button data-cmd='{"type":"home"}'>⏹ Thoát</button>
+      </div>
+    </div>
+
+    <div id="pad">Bàn di chuột<br>Kéo 1 ngón: di con trỏ · Chạm: bấm<br>Kéo 2 ngón: cuộn trang</div>
+
+    <button id="unpairBtn" class="sub" style="background:none">Đổi TV khác</button>
+  </section>
+</main>
+<div id="toast" class="toast"><span id="toastText"></span><button id="toastBtn" class="primary hidden">Mở</button></div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const CODE_RE = /^[A-Z0-9]{6}$/;
+  let code = null, ws = null, retry = 0, tvOnline = false, seeking = false, pingTimer = null;
+
+  function toast(msg, isErr, url) {
+    $('toastText').textContent = msg;
+    $('toast').classList.toggle('err', !!isErr);
+    $('toastBtn').classList.toggle('hidden', !url);
+    $('toastBtn').onclick = () => { send({ type: 'play', url }); $('toast').classList.remove('show'); };
+    $('toast').classList.add('show');
+    clearTimeout(toast.t);
+    toast.t = setTimeout(() => $('toast').classList.remove('show'), url ? 6000 : 2600);
+  }
+  const fmt = (s) => {
+    s = Math.max(0, Math.floor(s || 0));
+    const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = String(s % 60).padStart(2, '0');
+    return h ? `${h}:${String(m).padStart(2, '0')}:${x}` : `${m}:${x}`;
+  };
+  const pill = (t, c) => { $('pillText').textContent = t; $('pill').className = 'pill ' + (c || ''); };
+
+  // ---------- Ghép nối ----------
+  function setCode(c) {
+    code = c;
+    if (c) localStorage.setItem('tvsc.code', c); else localStorage.removeItem('tvsc.code');
+    $('pairCard').classList.toggle('hidden', !!c);
+    $('remote').classList.toggle('hidden', !c);
+    if (c) connect(); else { if (ws) { ws.onclose = null; ws.close(); ws = null; } pill('Chưa kết nối'); }
+  }
+  $('pairBtn').onclick = () => {
+    const c = $('codeInput').value.trim().toUpperCase();
+    CODE_RE.test(c) ? setCode(c) : toast('Mã TV gồm 6 ký tự chữ và số', true);
+  };
+  $('unpairBtn').onclick = () => confirm('Ngắt kết nối với TV này?') && setCode(null);
+
+  // ---------- WebSocket ----------
+  function connect() {
+    if (ws) { ws.onclose = null; ws.close(); }
+    pill('Đang kết nối…');
+    const sock = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws?role=remote&code=${code}`);
+    ws = sock;
+    sock.onopen = () => { retry = 0; clearInterval(pingTimer); pingTimer = setInterval(() => send({ type: 'ping' }), 20000); };
+    sock.onmessage = (ev) => {
+      let m; try { m = JSON.parse(ev.data); } catch { return; }
+      if (m.type === 'tv') { tvOnline = m.online; pill(tvOnline ? `TV ${code} sẵn sàng` : `TV ${code} chưa mở app`, tvOnline ? 'ok' : 'bad'); }
+      else if (m.type === 'status') render(m);
+      else if (m.type === 'notice') toast(m.message, false, m.url);
+      else if (m.type === 'error') toast(m.message, true);
+    };
+    sock.onclose = () => {
+      clearInterval(pingTimer);
+      if (ws !== sock) return;
+      pill('Mất kết nối máy chủ…', 'bad');
+      setTimeout(() => { if (ws === sock && code) connect(); }, Math.min(15000, 1000 * 2 ** retry++));
+    };
+  }
+  const send = (m) => ws && ws.readyState === 1 ? (ws.send(JSON.stringify(m)), true) : false;
+  function cmd(m) {
+    if (!tvOnline) return toast('TV chưa mở app TV Smart Connect', true);
+    if (!send(m)) toast('Chưa kết nối được máy chủ', true);
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && code && (!ws || ws.readyState > 1)) { retry = 0; connect(); }
+  });
+
+  // ---------- Trạng thái ----------
+  const STATE = { playing: 'Đang phát', paused: 'Tạm dừng', buffering: 'Đang tải…', ended: 'Hết phim', novideo: 'Chưa thấy video' };
+  function render(s) {
+    $('title').textContent = s.mode === 'web' ? (s.title || s.url || 'Đang tải trang…') : 'TV đang ở màn hình chờ';
+    const hasVideo = s.mode === 'web' && s.state !== 'novideo';
+    $('videoBox').classList.toggle('hidden', !hasVideo);
+    $('toggleBtn').textContent = s.state === 'playing' ? '⏸' : '▶';
+    if (!hasVideo) return;
+    $('state').textContent = STATE[s.state] || '';
+    const dur = s.duration || 0;
+    if (!seeking) { $('seek').max = Math.floor(dur); $('seek').value = Math.floor(s.position || 0); $('pos').textContent = fmt(s.position); }
+    $('dur').textContent = dur ? fmt(dur) : (s.live ? 'TRỰC TIẾP' : '--:--');
+  }
+  $('seek').oninput = () => { seeking = true; $('pos').textContent = fmt($('seek').value); };
+  $('seek').onchange = () => { cmd({ type: 'seek', position: Number($('seek').value) }); setTimeout(() => (seeking = false), 1500); };
+  document.querySelectorAll('[data-cmd]').forEach((b) => (b.onclick = () => cmd(JSON.parse(b.dataset.cmd))));
+
+  // ---------- Mở link ----------
+  $('openBtn').onclick = () => {
+    let url = $('urlInput').value.trim();
+    if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
+    if (!url) return toast('Hãy dán link trang phim', true);
+    cmd({ type: 'play', url });
+    $('urlInput').blur();
+  };
+  $('pasteBtn').onclick = async () => {
+    try { $('urlInput').value = (await navigator.clipboard.readText()).trim(); }
+    catch { toast('Không đọc được bộ nhớ tạm — nhấn giữ ô nhập để Dán', true); }
+  };
+
+  // ---------- Bàn di chuột ----------
+  const pad = $('pad');
+  let last = null, moved = 0, startT = 0, fingers = 0, acc = { dx: 0, dy: 0, sx: 0, sy: 0 }, raf = 0;
+  function flush() {
+    raf = 0;
+    if (acc.dx || acc.dy) send({ type: 'move', dx: acc.dx, dy: acc.dy });
+    if (acc.sx || acc.sy) send({ type: 'scroll', dx: acc.sx * 3, dy: acc.sy * 3 });
+    acc = { dx: 0, dy: 0, sx: 0, sy: 0 };
+  }
+  const center = (t) => { let x = 0, y = 0; for (const p of t) { x += p.clientX; y += p.clientY; } return { x: x / t.length, y: y / t.length }; };
+  pad.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    fingers = Math.max(fingers, e.touches.length);
+    last = center(e.touches);
+    if (e.touches.length === 1) { moved = 0; startT = Date.now(); fingers = 1; }
+    pad.classList.add('active');
+  }, { passive: false });
+  pad.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    const c = center(e.touches);
+    const dx = c.x - last.x, dy = c.y - last.y;
+    last = c;
+    moved += Math.abs(dx) + Math.abs(dy);
+    // Di nhanh thì con trỏ chạy xa hơn (gia tốc).
+    const accel = Math.min(3, 1 + Math.hypot(dx, dy) / 15);
+    if (e.touches.length >= 2) { acc.sx += dx; acc.sy += dy; }
+    else { acc.dx += dx * accel; acc.dy += dy * accel; }
+    if (!raf) raf = requestAnimationFrame(flush);
+  }, { passive: false });
+  pad.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    if (e.touches.length) { last = center(e.touches); return; }
+    pad.classList.remove('active');
+    if (fingers === 1 && moved < 10 && Date.now() - startT < 300) cmd({ type: 'click' });
+    fingers = 0;
+  }, { passive: false });
+
+  // ---------- Khởi động ----------
+  const q = new URLSearchParams(location.search);
+  const fromQr = (q.get('c') || '').toUpperCase();
+  if (CODE_RE.test(fromQr)) { localStorage.setItem('tvsc.code', fromQr); history.replaceState(null, '', location.pathname); }
+  if (q.get('url')) $('urlInput').value = q.get('url');
+  const saved = localStorage.getItem('tvsc.code');
+  setCode(CODE_RE.test(saved || '') ? saved : null);
+})();
+</script>
+</body>
+</html>
