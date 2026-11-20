@@ -3,7 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val serverUrl = (project.findProperty("serverUrl") as String?) ?: "http://10.0.2.2:3000"
+val serverUrl = (project.findProperty("serverUrl") as String?) ?: "https://tv-smart-connect.onrender.com"
 
 android {
     namespace = "com.tvsmartconnect"
